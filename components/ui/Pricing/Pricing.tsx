@@ -47,38 +47,40 @@ export default function Pricing({ user, products, subscription }: Props) {
   const currentPath = usePathname();
 
   const handleStripeCheckout = async (price: Price) => {
-    setPriceIdLoading(price.id);
+    try {
+      setPriceIdLoading(price.id);
 
-    if (!user) {
+      if (!user) {
+        setPriceIdLoading(undefined);
+        return router.push('/signin/signup');
+      }
+
+      const { errorRedirect, sessionId } = await checkoutWithStripe(price);
+
+      if (errorRedirect) {
+        setPriceIdLoading(undefined);
+        return router.push(errorRedirect);
+      }
+
+      if (!sessionId) {
+        setPriceIdLoading(undefined);
+        return router.push(
+          getErrorRedirect(
+            currentPath,
+            'Une erreur est survenue.',
+            'Veuillez réessayer plus tard.'
+          )
+        );
+      }
+
+      const stripe = await getStripe();
+      await stripe?.redirectToCheckout({ sessionId });
+
       setPriceIdLoading(undefined);
-      return router.push('/signin/signup');
-    }
-
-    const { errorRedirect, sessionId } = await checkoutWithStripe(
-      price,
-      currentPath
-    );
-
-    if (errorRedirect) {
+    } catch (error) {
+      console.error('Erreur:', error);
       setPriceIdLoading(undefined);
-      return router.push(errorRedirect);
     }
-
-    if (!sessionId) {
-      setPriceIdLoading(undefined);
-      return router.push(
-        getErrorRedirect(
-          currentPath,
-          'An unknown error occurred.',
-          'Please try again later or contact a system administrator.'
-        )
-      );
-    }
-
-    const stripe = await getStripe();
-    stripe?.redirectToCheckout({ sessionId });
-
-    setPriceIdLoading(undefined);
   };
 
   if (!products.length) {
@@ -144,7 +146,13 @@ export default function Pricing({ user, products, subscription }: Props) {
             </div>
           </div>
           <div className="mt-12 space-y-0 sm:mt-16 flex flex-wrap justify-center gap-6 lg:max-w-4xl lg:mx-auto xl:max-w-none xl:mx-0">
-            {products.map((product) => {
+            {products
+              .sort((a, b) => {
+                const priceA = a.prices.find(p => p.interval === billingInterval)?.unit_amount || 0;
+                const priceB = b.prices.find(p => p.interval === billingInterval)?.unit_amount || 0;
+                return priceA - priceB;
+              })
+              .map((product) => {
               const price = product?.prices?.find(
                 (price) => price.interval === billingInterval
               );
