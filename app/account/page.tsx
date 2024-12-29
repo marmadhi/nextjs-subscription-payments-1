@@ -1,43 +1,59 @@
 import CustomerPortalForm from '@/components/ui/AccountForms/CustomerPortalForm';
-import EmailForm from '@/components/ui/AccountForms/EmailForm';
-import NameForm from '@/components/ui/AccountForms/NameForm';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
-import {
-  getUserDetails,
-  getSubscription,
-  getUser
-} from '@/utils/supabase/queries';
+import { getSubscription, getUser, getCustomer } from '@/utils/supabase/queries';
 
 export default async function Account() {
   const supabase = createClient();
-  const [user, userDetails, subscription] = await Promise.all([
+  const [user, subscription, customer] = await Promise.all([
     getUser(supabase),
-    getUserDetails(supabase),
-    getSubscription(supabase)
+    getSubscription(supabase),
+    getCustomer(supabase)
   ]);
 
   if (!user) {
     return redirect('/signin');
   }
 
+  if (!subscription) {
+    return redirect('/pricing');
+  }
+
   return (
-    <section className="mb-32 bg-black">
-      <div className="max-w-6xl px-4 py-8 mx-auto sm:px-6 sm:pt-24 lg:px-8">
-        <div className="sm:align-center sm:flex sm:flex-col">
-          <h1 className="text-4xl font-extrabold text-white sm:text-center sm:text-6xl">
-            Account
-          </h1>
-          <p className="max-w-2xl m-auto mt-5 text-xl text-zinc-200 sm:text-center sm:text-2xl">
-            We partnered with Stripe for a simplified billing.
-          </p>
+    <div className="space-y-6">
+      <div className="p-4 bg-zinc-900 rounded-lg">
+        <h2 className="text-2xl font-bold text-white mb-4">Vos crédits</h2>
+        <div className="flex items-center gap-4">
+          <div className="bg-blue-600/20 p-4 rounded-lg">
+            <p className="text-3xl font-bold text-blue-400">
+              {subscription.credits}
+            </p>
+            <p className="text-sm text-blue-300">crédits restants</p>
+          </div>
+          <div className="text-zinc-400">
+            <p>Plan {subscription.prices?.products?.name}</p>
+            <p className="text-sm">
+              Renouvellement le {' '}
+              {new Date(subscription.current_period_end).toLocaleDateString('fr-FR', {
+                day: 'numeric',
+                month: 'long',
+                year: 'numeric'
+              })}
+            </p>
+          </div>
         </div>
       </div>
-      <div className="p-4">
+
+      <div className="p-4 bg-zinc-900 rounded-lg">
+        <h2 className="text-2xl font-bold text-white mb-4">Gérer l'abonnement</h2>
         <CustomerPortalForm subscription={subscription} />
-        <NameForm userName={userDetails?.full_name ?? ''} />
-        <EmailForm userEmail={user.email} />
+        
+        <div className="mt-6 space-y-2 text-sm text-zinc-500">
+          <p>User ID: {user.id}</p>
+          <p>Customer ID: {customer?.stripe_customer_id}</p>
+          <p>Subscription ID: {subscription.id}</p>
+        </div>
       </div>
-    </section>
+    </div>
   );
 }

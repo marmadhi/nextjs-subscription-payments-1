@@ -11,9 +11,13 @@ export const getUser = cache(async (supabase: SupabaseClient) => {
 export const getSubscription = cache(async (supabase: SupabaseClient) => {
   const { data: subscription, error } = await supabase
     .from('subscriptions')
-    .select('*, prices(*, products(*))')
+    .select('*, credits, prices(*, products(*))')
     .in('status', ['trialing', 'active'])
     .maybeSingle();
+
+  if (error) {
+    console.error('Erreur lors de la récupération de l\'abonnement:', error);
+  }
 
   return subscription;
 });
@@ -36,4 +40,49 @@ export const getUserDetails = cache(async (supabase: SupabaseClient) => {
     .select('*')
     .single();
   return userDetails;
+});
+
+export const getCustomer = cache(async (supabase: SupabaseClient) => {
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const { data: customerData, error } = await supabase
+    .from('customers')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (error) {
+    console.error('Erreur getCustomer:', error);
+    return null;
+  }
+
+  return customerData;
+});
+
+export const getAnalyses = cache(async (supabase: SupabaseClient) => {
+  const {
+    data: { user }
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  const { data: analyses, error } = await supabase
+    .from('analyses')
+    .select(`
+      *,
+      projects(name)
+    `)
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Erreur getAnalyses:', error);
+    return null;
+  }
+
+  return analyses;
 });

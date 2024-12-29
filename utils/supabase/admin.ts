@@ -241,7 +241,25 @@ const manageSubscriptionStatusChange = async (
       expand: ['default_payment_method', 'items.data.price.product']
     });
 
-    // Préparation des données avec vérification
+    // Déterminer les crédits en fonction du produit
+    let credits = 0;
+    const product = subscription.items.data[0]?.price?.product as Stripe.Product;
+    
+    // Définir les crédits selon le produit
+    switch (product?.name?.toLowerCase()) {
+      case 'basic':
+        credits = 10;
+        break;
+      case 'pro':
+        credits = 50;
+        break;
+      case 'enterprise':
+        credits = 100;
+        break;
+      default:
+        credits = 0;
+    }
+
     const subscriptionData = {
       id: subscription.id,
       user_id: customerData.id,
@@ -257,13 +275,12 @@ const manageSubscriptionStatusChange = async (
       ended_at: subscription.ended_at ? toDateTime(subscription.ended_at).toISOString() : null,
       trial_start: subscription.trial_start ? toDateTime(subscription.trial_start).toISOString() : null,
       trial_end: subscription.trial_end ? toDateTime(subscription.trial_end).toISOString() : null,
-      metadata: subscription.metadata
+      metadata: subscription.metadata,
+      credits: credits // Ajout des crédits
     };
 
-    // Log des données avant insertion
-    console.log('📝 Données à insérer:', subscriptionData);
+    console.log('📝 Données à insérer avec crédits:', subscriptionData);
 
-    // Tentative d'upsert avec gestion d'erreur détaillée
     const { error: upsertError } = await supabaseAdmin
       .from('subscriptions')
       .upsert([subscriptionData]);
@@ -276,7 +293,7 @@ const manageSubscriptionStatusChange = async (
       throw new Error(`Erreur d'upsert: ${upsertError.message}`);
     }
 
-    console.log('✅ Subscription mise à jour avec succès:', subscriptionId);
+    console.log('✅ Subscription mise à jour avec succès. Crédits attribués:', credits);
   } catch (error) {
     console.error('❌ Erreur dans manageSubscriptionStatusChange:', error);
     throw error;
