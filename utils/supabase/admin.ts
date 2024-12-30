@@ -213,19 +213,21 @@ const manageSubscriptionStatusChange = async (
   customerId: string,
   createAction = false
 ) => {
-  // Vérification des paramètres
-  if (!subscriptionId || !customerId) {
-    console.error('❌ Paramètres manquants:', { subscriptionId, customerId });
-    throw new Error('Paramètres subscriptionId et customerId requis');
-  }
+  console.log('🎯 Début manageSubscriptionStatusChange:', {
+    subscriptionId,
+    customerId,
+    createAction
+  });
 
   try {
-    // Récupération du customer avec plus de détails en cas d'erreur
+    // Récupération du customer
     const { data: customerData, error: customerError } = await supabaseAdmin
       .from('customers')
       .select('id')
       .eq('stripe_customer_id', customerId)
       .single();
+
+    console.log('👤 Données customer:', { customerData, customerError });
 
     if (customerError || !customerData) {
       console.error('❌ Customer non trouvé:', {
@@ -240,6 +242,8 @@ const manageSubscriptionStatusChange = async (
     const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
       expand: ['default_payment_method', 'items.data.price.product']
     });
+
+    console.log('📦 Données subscription Stripe:', subscription);
 
     // Déterminer les crédits en fonction du produit
     let credits = 0;
