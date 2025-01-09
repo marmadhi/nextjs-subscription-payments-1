@@ -4,6 +4,15 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { cn } from '@/utils/cn';
 import CreditsDisplay from '../Credits/CreditsDisplay';
+import { 
+  CreditCard, 
+  User, 
+  BarChart, 
+  FileText,
+  Search,
+  FileUp,
+  GitCompare
+} from 'lucide-react';
 
 type SidebarProps = {
   credits?: number;
@@ -17,22 +26,22 @@ const sidebarLinks = [
   {
     label: 'Mon abonnement',
     href: '/account',
-    icon: '💳'
+    icon: CreditCard
   },
   {
     label: 'Mes coordonnées',
     href: '/account/profile',
-    icon: '👤'
+    icon: User
   },
   {
     label: 'Mes analyses',
     href: '/account/analyses',
-    icon: '📊'
+    icon: BarChart
   },
   {
     label: 'Mes factures',
     href: '/account/invoices',
-    icon: '📄'
+    icon: FileText
   }
 ];
 
@@ -40,9 +49,9 @@ export default function Sidebar({ credits, subscriptionId, hasSubscription }: Si
   const pathname = usePathname();
 
   return (
-    <div className="w-64 h-full bg-zinc-900 text-white">
-      <nav className="p-4 space-y-6">
-        <div className="px-4 py-2">
+    <div className="w-80 bg-background text-text border-r border-gray-200">
+      <nav className="p-8 space-y-6">
+        <div className="">
           {hasSubscription && typeof credits === 'number' && subscriptionId ? (
             <CreditsDisplay 
               initialCredits={credits} 
@@ -51,7 +60,7 @@ export default function Sidebar({ credits, subscriptionId, hasSubscription }: Si
           ) : (
             <Link
               href="/pricing"
-              className="block w-full px-4 py-2 text-center bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+              className="block w-full px-4 py-2 text-center bg-primary-600 hover:bg-primary-700 text-white rounded-lg transition-colors"
             >
               S'abonner
             </Link>
@@ -59,22 +68,41 @@ export default function Sidebar({ credits, subscriptionId, hasSubscription }: Si
         </div>
 
         {hasSubscription && (
-          <div className="px-2">
+          <div className="">
             <Link
               href="/account/analyse"
               className={cn(
-                'flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
-                'bg-blue-600 hover:bg-blue-700 text-white font-medium',
-                pathname === '/account/analyse' ? 'bg-blue-700' : ''
+                'flex gap-3 hover:bg-zinc-100 items-center px-4 py-2 rounded-lg transition-colors',
+                pathname === '/account/analyse' ? 'bg-zinc-100' : ''
               )}
             >
-              <span className="text-xl">🔍</span>
-              <span className="text-lg">Analyser</span>
+              <Search className="w-5 h-5" />
+              <span className="">Analyser</span>
+            </Link>
+            <Link
+              href="/account/conversion"
+              className={cn(
+                'flex gap-3 hover:bg-zinc-100 items-center px-4 py-2 rounded-lg transition-colors',
+                pathname === '/account/conversion' ? 'bg-zinc-100' : ''
+              )}
+            >
+              <FileUp className="w-5 h-5" />
+              <span className="">Convertir PDF</span>
+            </Link>
+            <Link
+              href="/account/matching"
+              className={cn(
+                'flex gap-3 hover:bg-zinc-100 items-center px-4 py-2 rounded-lg transition-colors',
+                pathname === '/account/matching' ? 'bg-zinc-100' : ''
+              )}
+            >
+              <GitCompare className="w-5 h-5" />
+              <span className="">Matching CV/Offre</span>
             </Link>
           </div>
         )}
 
-        <div className="h-px bg-zinc-800" />
+        <div className="h-px bg-gray-200" />
 
         <ul className="space-y-2">
           {sidebarLinks.map((link) => (
@@ -82,12 +110,11 @@ export default function Sidebar({ credits, subscriptionId, hasSubscription }: Si
               <Link
                 href={link.href}
                 className={cn(
-                  'flex items-center gap-3 px-4 py-2 rounded-lg transition-colors',
-                  'hover:bg-zinc-800',
-                  pathname === link.href ? 'bg-zinc-800' : 'transparent'
+                  'flex gap-3 hover:bg-zinc-100 items-center px-4 py-2 rounded-lg transition-colors',
+                  pathname === link.href ? 'bg-zinc-100' : 'transparent'
                 )}
               >
-                <span>{link.icon}</span>
+                <link.icon className="w-5 h-5" />
                 <span>{link.label}</span>
               </Link>
             </li>

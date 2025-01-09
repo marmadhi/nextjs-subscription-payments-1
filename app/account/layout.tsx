@@ -20,7 +20,7 @@ export default async function AccountLayout({
   }
 
   return (
-    <div className="flex min-h-screen bg-black">
+    <div className="flex min-h-screen">
       <Sidebar 
         credits={subscription?.credits}
         userId={user.id}
@@ -28,7 +28,7 @@ export default async function AccountLayout({
         subscriptionId={subscription?.id}
         hasSubscription={!!subscription}
       />
-      <main className="flex-1 p-8">{children}</main>
+      <main className="flex-1 p-8 bg-background-secondary">{children}</main>
     </div>
   );
 } 

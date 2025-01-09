@@ -71,11 +71,11 @@ export async function POST(req: Request) {
       messages: [
         {
           role: "system",
-          content: "Tu es un expert en analyse de code. Tu dois fournir une analyse détaillée du code fourni."
+          content: "Tu es un expert en analyse et structuration de contenu. Tu dois structurer, en sortie, la totalité du contenu fourni en markdown."
         },
         {
           role: "user",
-          content: `Analyse ce code du projet "${projectName}" :\n\n${code}`
+          content: `En gardant toutes les informations du contenu, structure le contenu suivant en markdown :\n\n${code}`
         }
       ]
     });

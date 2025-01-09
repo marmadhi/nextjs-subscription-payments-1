@@ -19,7 +19,7 @@ export default async function Analyse() {
   }
 
   return (
-    <div className="bg-zinc-900 rounded-lg p-6">
+    <div className="bg-background p-6 rounded-lg">
       <AnalyseForm user={user} />
     </div>
   );

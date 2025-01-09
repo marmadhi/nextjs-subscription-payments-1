@@ -17,8 +17,8 @@ export default async function Profile() {
 
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-zinc-900 rounded-lg">
-        <h2 className="text-2xl font-bold text-white mb-4">Mes coordonnées</h2>
+      <div className="rounded-lg text-zinc-950">
+        <h2 className="text-2xl font-bold mb-4 max-w-3xl m-auto">Mes coordonnées</h2>
         <div className="space-y-4">
           <NameForm userName={userDetails?.full_name ?? ''} />
           <EmailForm userEmail={user.email} />

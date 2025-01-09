@@ -32,9 +32,9 @@ export default async function Analyses() {
 
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-zinc-900 rounded-lg">
+      <div className="">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-2xl font-bold text-white">Mes analyses</h2>
+          <h2 className="text-2xl font-bold max-w-3xl m-auto">Mes analyses</h2>
           {subscription && (
             <Link 
               href="/account/analyse" 
@@ -49,7 +49,13 @@ export default async function Analyses() {
           analyses.length > 0 ? (
             <div className="space-y-4">
               {analyses.map((analyse) => (
-                <AnalyseItem key={analyse.id} analyse={analyse} />
+                <AnalyseItem 
+                  key={analyse.id} 
+                  analyse={{
+                    ...analyse,
+                    shortId: `A${analyse.timestamp_id?.toString().slice(-6)}` 
+                  }} 
+                />
               ))}
             </div>
           ) : (

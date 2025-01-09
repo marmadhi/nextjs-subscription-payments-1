@@ -37,8 +37,8 @@ export default function Account() {
 
   return (
     <div className="space-y-6">
-      <div className="p-4 bg-zinc-900 rounded-lg">
-        <h2 className="text-2xl font-bold text-white mb-4">Vos crédits</h2>
+      <div className="rounded-lg bg-background p-4 border border-gray-200">
+        <h2 className="text-2xl font-bold text-zinc-950 mb-4">Vos crédits</h2>
         <div className="flex items-center gap-4">
           <CreditsDisplay 
             initialCredits={subscription.credits} 
@@ -58,8 +58,8 @@ export default function Account() {
         </div>
       </div>
 
-      <div className="p-4 bg-zinc-900 rounded-lg">
-        <h2 className="text-2xl font-bold text-white mb-4">Gérer l'abonnement</h2>
+      <div className="p-4 bg-background rounded-lg border border-gray-200">
+        <h2 className="text-2xl font-bold text-zinc-950 mb-4">Gérer l'abonnement</h2>
         <CustomerPortalForm subscription={subscription} />
       </div>
     </div>

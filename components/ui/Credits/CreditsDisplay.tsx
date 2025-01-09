@@ -57,9 +57,9 @@ export default function CreditsDisplay({ initialCredits, subscriptionId }: Credi
   }, [credits]);
 
   return (
-    <div className="bg-blue-600/20 p-4 rounded-lg">
-      <p className="text-3xl font-bold text-blue-400">{credits}</p>
-      <p className="text-sm text-blue-300">crédits restants</p>
+    <div className="bg-primary-100 p-4 rounded-lg">
+      <p className="text-3xl font-bold text-primary-600">{credits}</p>
+      <p className="text-sm text-primary-500">crédits restants</p>
     </div>
   );
 } 

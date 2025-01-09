@@ -1,9 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import type { User } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
+
+interface Job {
+  id: string;
+  file_name: string;
+  content: string;
+  user_id: string;
+  file_path: string;
+}
 
 export default function AnalyseForm({ user }: { user: User }) {
   const router = useRouter();
@@ -12,6 +20,73 @@ export default function AnalyseForm({ user }: { user: User }) {
   const [codeToAnalyse, setCodeToAnalyse] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [userJobs, setUserJobs] = useState<Job[]>([]);
+  const [selectedJob, setSelectedJob] = useState<string>('');
+  const [inputMethod, setInputMethod] = useState<'direct' | 'file' | 'existing'>('direct');
+
+  useEffect(() => {
+    const fetchUserJobs = async () => {
+      const supabase = createClient();
+      
+      const { data, error } = await supabase
+        .from('jobs')
+        .select('id, file_name, content, user_id, file_path')
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('Erreur lors de la récupération des jobs:', error);
+        return;
+      }
+
+      if (data) {
+        setUserJobs(data);
+      }
+    };
+
+    fetchUserJobs();
+  }, [user.id]);
+
+  const handleFileUpload = async (file: File) => {
+    const supabase = createClient();
+    const fileExt = file.name.split('.').pop();
+    const fileName = `${user.id}/${Date.now()}-${Math.random()}.${fileExt}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from('jobs')
+      .upload(fileName, file);
+
+    if (uploadError) throw uploadError;
+
+    const fileContent = await file.text();
+
+    const { data: jobData, error: jobError } = await supabase
+      .from('jobs')
+      .insert({
+        user_id: user.id,
+        file_name: file.name,
+        content: fileContent,
+        file_path: fileName
+      })
+      .select()
+      .single();
+
+    if (jobError) throw jobError;
+
+    const { data: updatedJobs } = await supabase
+      .from('jobs')
+      .select('id, name, content, user_id')
+      .eq('user_id', user.id);
+    if (updatedJobs) {
+      setUserJobs(updatedJobs.map(job => ({
+        ...job,
+        file_name: file.name,
+        file_path: fileName
+      })));
+    }
+
+    return fileContent;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,6 +95,20 @@ export default function AnalyseForm({ user }: { user: User }) {
     setAnalysisResult(null);
 
     try {
+      let contentToAnalyse = codeToAnalyse;
+
+      if (inputMethod === 'file' && selectedFile) {
+        contentToAnalyse = await handleFileUpload(selectedFile);
+      } else if (inputMethod === 'existing' && selectedJob) {
+        const selectedJobData = userJobs.find(
+          job => job.id === selectedJob && job.user_id === user.id
+        );
+        if (!selectedJobData) {
+          throw new Error('Fichier non trouvé ou non autorisé');
+        }
+        contentToAnalyse = selectedJobData.content;
+      }
+
       const supabase = createClient();
       
       const { data: analyse, error } = await supabase
@@ -27,7 +116,7 @@ export default function AnalyseForm({ user }: { user: User }) {
         .insert({
           user_id: user.id,
           project_name: projectName,
-          code: codeToAnalyse,
+          code: contentToAnalyse,
           description: `Analyse du projet ${projectName}`
         })
         .select()
@@ -41,7 +130,7 @@ export default function AnalyseForm({ user }: { user: User }) {
         body: JSON.stringify({
           analyseId: analyse.id,
           projectName,
-          code: codeToAnalyse
+          code: contentToAnalyse
         })
       });
 
@@ -70,9 +159,9 @@ export default function AnalyseForm({ user }: { user: User }) {
 
   return (
     <div className="space-y-8">
-      <form onSubmit={handleSubmit} className="space-y-6">
+      <form onSubmit={handleSubmit} className="space-y-6 text-zinc-950">
         <div>
-          <label htmlFor="projectName" className="block text-sm font-medium text-white mb-2">
+          <label htmlFor="projectName" className="block text-zinc-950 mb-2">
             Nom du projet
           </label>
           <input
@@ -80,29 +169,104 @@ export default function AnalyseForm({ user }: { user: User }) {
             id="projectName"
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
-            className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white"
+            className="w-full px-4 py-2 bg-background border border-gray-200 rounded-lg"
             required
           />
         </div>
 
-        <div>
-          <label htmlFor="code" className="block text-sm font-medium text-white mb-2">
-            Code à analyser
-          </label>
-          <textarea
-            id="code"
-            value={codeToAnalyse}
-            onChange={(e) => setCodeToAnalyse(e.target.value)}
-            rows={10}
-            className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white font-mono"
-            required
-          />
+        <div className="space-y-4">
+          <div className="flex space-x-4">
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="direct"
+                checked={inputMethod === 'direct'}
+                onChange={(e) => setInputMethod('direct')}
+                className="mr-2"
+              />
+              Saisie directe
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="file"
+                checked={inputMethod === 'file'}
+                onChange={(e) => setInputMethod('file')}
+                className="mr-2"
+              />
+              Upload fichier
+            </label>
+            <label className="flex items-center">
+              <input
+                type="radio"
+                value="existing"
+                checked={inputMethod === 'existing'}
+                onChange={(e) => setInputMethod('existing')}
+                className="mr-2"
+              />
+              Fichier existant
+            </label>
+          </div>
+
+          {inputMethod === 'direct' && (
+            <div>
+              <label htmlFor="code" className="block text-zinc-950 mb-2">
+                Code à analyser
+              </label>
+              <textarea
+                id="code"
+                value={codeToAnalyse}
+                onChange={(e) => setCodeToAnalyse(e.target.value)}
+                rows={10}
+                className="w-full px-4 py-2 bg-background border border-gray-200 rounded-lg"
+                required={inputMethod === 'direct'}
+              />
+            </div>
+          )}
+
+          {inputMethod === 'file' && (
+            <div>
+              <label htmlFor="file" className="block text-zinc-950 mb-2">
+                Sélectionner un fichier
+              </label>
+              <input
+                type="file"
+                id="file"
+                accept=".txt,.js,.ts,.jsx,.tsx"
+                onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                className="w-full"
+                required={inputMethod === 'file'}
+              />
+            </div>
+          )}
+
+          {inputMethod === 'existing' && (
+            <div>
+              <label htmlFor="existingFile" className="block text-zinc-950 mb-2">
+                Sélectionner un fichier existant
+              </label>
+              <select
+                id="existingFile"
+                value={selectedJob}
+                onChange={(e) => setSelectedJob(e.target.value)}
+                className="w-full px-4 py-2 bg-background border border-gray-200 rounded-lg"
+                required={inputMethod === 'existing'}
+              >
+                <option value="">Sélectionner un fichier</option>
+                {userJobs.map((job) => (
+                  <option key={job.id} value={job.id}>
+                    {job.file_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <button
           type="submit"
           disabled={isLoading}
-          className={`w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors ${
+          className={` px-4 py-2 bg-black text-white rounded-lg hover:bg-blue-700 transition-colors ${
             isLoading ? 'opacity-50 cursor-not-allowed' : ''
           }`}
         >
@@ -118,8 +282,8 @@ export default function AnalyseForm({ user }: { user: User }) {
 
       {analysisResult && (
         <div className="mt-8">
-          <h2 className="text-xl font-semibold text-white mb-4">Résultat de l'analyse</h2>
-          <div className="p-6 bg-zinc-800 rounded-lg prose prose-invert max-w-none">
+          <h2 className="text-xl font-semibold mb-4">Résultat de l'analyse</h2>
+          <div className="p-6 bg-background border border-gray-200 text-zinc-950 rounded-lg prose prose-invert max-w-none">
             <pre className="whitespace-pre-wrap">{analysisResult}</pre>
           </div>
         </div>

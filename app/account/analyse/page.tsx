@@ -19,8 +19,8 @@ export default async function Analyse() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="bg-zinc-900 rounded-lg p-6">
+    <div className="m-auto max-w-2xl space-y-6">
+      <div className="">
         <AnalyseForm user={user} />
       </div>
     </div>
