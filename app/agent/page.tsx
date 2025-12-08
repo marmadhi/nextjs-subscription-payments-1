@@ -52,10 +52,12 @@ interface AgentConfig {
 export default function AgentPage() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
 
   // Chat state
   const [messages, setMessages] = useState<Message[]>([]);
@@ -79,10 +81,22 @@ export default function AgentPage() {
     loadConversations();
   }, []);
 
-  // Auto-scroll to bottom
+  // Auto-scroll to bottom only if user hasn't scrolled up
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+    if (autoScroll) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages, streamingContent, autoScroll]);
+
+  // Detect if user scrolls up to disable auto-scroll
+  const handleScroll = useCallback(() => {
+    const container = messagesContainerRef.current;
+    if (container) {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+      setAutoScroll(isNearBottom);
+    }
+  }, []);
 
   const loadConfig = async () => {
     try {
@@ -245,6 +259,7 @@ export default function AgentPage() {
     setCurrentSteps([]);
     setStreamingContent('');
     setError(null);
+    setAutoScroll(true); // Re-enable auto-scroll when sending a new message
 
     // Create conversation if needed
     let conversationId = currentConversationId;
@@ -606,7 +621,11 @@ export default function AgentPage() {
               /* Chat Interface */
               <div className="border border-zinc-700 rounded-lg bg-zinc-900/50 flex flex-col h-[calc(100vh-280px)]">
                 {/* Messages */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-4">
+                <div
+                  ref={messagesContainerRef}
+                  onScroll={handleScroll}
+                  className="flex-1 overflow-y-auto p-4 space-y-4"
+                >
                   {messages.length === 0 && !streamingContent && (
                     <div className="text-center text-zinc-500 py-12">
                       <p className="text-lg">Start a conversation with the AI Agent</p>
@@ -644,27 +663,27 @@ export default function AgentPage() {
                     </div>
                   )}
 
-                  {/* Agent Steps */}
-                  {currentSteps.length > 0 && (
-                    <div className="border border-zinc-600 rounded-lg p-3 bg-zinc-800/50">
-                      <p className="text-xs text-zinc-400 mb-2 font-medium">Agent Steps</p>
-                      <div className="space-y-1">
-                        {currentSteps.map((step, index) => (
-                          <div key={index} className="flex items-center gap-2 text-sm">
-                            <div className={`w-2 h-2 rounded-full ${
-                              index === currentSteps.length - 1
-                                ? 'bg-blue-400 animate-pulse'
-                                : 'bg-green-400'
-                            }`} />
-                            <span className="text-zinc-300">{step.message}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   <div ref={messagesEndRef} />
                 </div>
+
+                {/* Agent Steps - Fixed above input */}
+                {currentSteps.length > 0 && (
+                  <div className="border-t border-zinc-600 p-3 bg-zinc-800">
+                    <p className="text-xs text-zinc-400 mb-2 font-medium">Agent Progress</p>
+                    <div className="flex flex-wrap gap-3">
+                      {currentSteps.map((step, index) => (
+                        <div key={index} className="flex items-center gap-2 text-sm">
+                          <div className={`w-2 h-2 rounded-full ${
+                            index === currentSteps.length - 1
+                              ? 'bg-blue-400 animate-pulse'
+                              : 'bg-green-400'
+                          }`} />
+                          <span className="text-zinc-300">{step.message}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 {/* Error display */}
                 {error && (
