@@ -347,7 +347,7 @@ export interface BenchmarkPrompt {
   category: string;
 }
 
-export interface BenchmarkMetric =
+export type BenchmarkMetric =
   | 'latency'
   | 'tokens_per_second'
   | 'cost'
