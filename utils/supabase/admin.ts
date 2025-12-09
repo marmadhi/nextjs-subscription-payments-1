@@ -226,7 +226,7 @@ const manageSubscriptionStatusChange = async (
   const { id: uuid } = customerData!;
 
   const subscription = await stripe.subscriptions.retrieve(subscriptionId, {
-    expand: ['default_payment_method']
+    expand: ['default_payment_method', 'items.data.price.product']
   });
   // Upsert the latest status of the subscription object.
   const subscriptionData: TablesInsert<'subscriptions'> = {
@@ -271,6 +271,90 @@ const manageSubscriptionStatusChange = async (
   console.log(
     `Inserted/updated subscription [${subscription.id}] for user [${uuid}]`
   );
+
+  // ============================================
+  // SYNC USER QUOTA BASED ON SUBSCRIPTION
+  // ============================================
+  try {
+    // Determine plan from product metadata or name
+    const product = subscription.items.data[0].price.product as Stripe.Product;
+    const productName = product.name?.toLowerCase() || '';
+    const productMetadata = product.metadata || {};
+
+    let planId = 'free';
+    if (productMetadata.plan) {
+      planId = productMetadata.plan;
+    } else if (productName.includes('enterprise')) {
+      planId = 'enterprise';
+    } else if (productName.includes('pro')) {
+      planId = 'pro';
+    } else if (productName.includes('starter')) {
+      planId = 'starter';
+    }
+
+    // If subscription is not active, reset to free
+    if (!['active', 'trialing'].includes(subscription.status)) {
+      planId = 'free';
+    }
+
+    // Plan limits configuration
+    const PLAN_LIMITS: Record<string, any> = {
+      free: {
+        maxTokensPerMonth: 50000,
+        maxCallsPerMinute: 5,
+        maxCallsPerDay: 100,
+        maxCostPerMonth: 1,
+        allowedModels: ['gpt-4o-mini', 'claude-3-haiku-20240307'],
+        allowedProviders: ['openai', 'anthropic']
+      },
+      starter: {
+        maxTokensPerMonth: 500000,
+        maxCallsPerMinute: 20,
+        maxCallsPerDay: 1000,
+        maxCostPerMonth: 10,
+        allowedModels: ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'],
+        allowedProviders: ['openai', 'anthropic']
+      },
+      pro: {
+        maxTokensPerMonth: 2000000,
+        maxCallsPerMinute: 60,
+        maxCallsPerDay: 5000,
+        maxCostPerMonth: 50,
+        allowedModels: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-sonnet-4-20250514'],
+        allowedProviders: ['openai', 'anthropic', 'google', 'mistral']
+      },
+      enterprise: {
+        maxTokensPerMonth: 10000000,
+        maxCallsPerMinute: 200,
+        maxCallsPerDay: 50000,
+        maxCostPerMonth: 500,
+        allowedModels: [],
+        allowedProviders: ['openai', 'anthropic', 'google', 'mistral', 'custom']
+      }
+    };
+
+    const limits = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
+
+    // Upsert user quota
+    const { error: quotaError } = await supabaseAdmin
+      .from('user_quotas')
+      .upsert({
+        user_id: uuid,
+        plan_id: planId,
+        limits: limits
+      }, {
+        onConflict: 'user_id'
+      });
+
+    if (quotaError) {
+      console.error(`Failed to update user quota: ${quotaError.message}`);
+    } else {
+      console.log(`Updated quota for user [${uuid}] to plan [${planId}]`);
+    }
+  } catch (quotaSyncError) {
+    console.error('Quota sync error:', quotaSyncError);
+    // Don't throw - subscription update succeeded, quota sync is secondary
+  }
 
   // For a new subscription copy the billing details to the customer object.
   // NOTE: This is a costly operation and should happen at the very end.
