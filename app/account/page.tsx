@@ -6,6 +6,7 @@ import SubscriptionDetails from '@/components/ui/AccountForms/SubscriptionDetail
 import SuccessMessage from '@/components/ui/AccountForms/SuccessMessage';
 import { redirect } from 'next/navigation';
 import { createClient } from '@/utils/supabase/server';
+import AppSidebar from '@/components/ui/AppSidebar';
 import {
   getUserDetails,
   getSubscription,
@@ -25,26 +26,34 @@ export default async function Account() {
   }
 
   return (
-    <section className="mb-32 bg-black">
-      <div className="max-w-6xl px-4 py-8 mx-auto sm:px-6 sm:pt-24 lg:px-8">
-        <div className="sm:align-center sm:flex sm:flex-col">
-          <h1 className="text-4xl font-extrabold text-white sm:text-center sm:text-6xl">
-            Account
-          </h1>
-          <p className="max-w-2xl m-auto mt-5 text-xl text-zinc-200 sm:text-center sm:text-2xl">
-            Manage your subscription and AI usage
-          </p>
+    <div className="h-screen bg-zinc-950 flex overflow-hidden">
+      <AppSidebar user={user} />
+      <main className="flex-1 overflow-y-auto">
+        <div className="max-w-3xl mx-auto px-6 py-12">
+          {/* Header */}
+          <div className="mb-10">
+            <h1 className="text-2xl font-semibold text-white mb-2">
+              Account Settings
+            </h1>
+            <p className="text-zinc-400">
+              Manage your subscription and profile
+            </p>
+          </div>
+
+          {/* Success Message */}
+          <Suspense fallback={null}>
+            <SuccessMessage />
+          </Suspense>
+
+          {/* Content */}
+          <div className="space-y-6">
+            <SubscriptionDetails subscription={subscription} />
+            <CustomerPortalForm subscription={subscription} />
+            <NameForm userName={userDetails?.full_name ?? ''} />
+            <EmailForm userEmail={user.email} />
+          </div>
         </div>
-      </div>
-      <div className="p-4">
-        <Suspense fallback={null}>
-          <SuccessMessage />
-        </Suspense>
-        <SubscriptionDetails subscription={subscription} />
-        <CustomerPortalForm subscription={subscription} />
-        <NameForm userName={userDetails?.full_name ?? ''} />
-        <EmailForm userEmail={user.email} />
-      </div>
-    </section>
+      </main>
+    </div>
   );
 }

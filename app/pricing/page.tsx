@@ -1,14 +1,13 @@
-import Pricing from '@/components/ui/Pricing/Pricing';
-import Navbar from '@/components/ui/Navbar';
-import Footer from '@/components/ui/Footer';
 import { createClient } from '@/utils/supabase/server';
 import {
   getProducts,
   getSubscription,
   getUser
 } from '@/utils/supabase/queries';
+import AppSidebar from '@/components/ui/AppSidebar';
+import PricingContent from './PricingContent';
 
-export default async function HomePage() {
+export default async function PricingPage() {
   const supabase = await createClient();
   const [user, products, subscription] = await Promise.all([
     getUser(supabase),
@@ -17,16 +16,15 @@ export default async function HomePage() {
   ]);
 
   return (
-    <>
-      <Navbar />
-      <main id="skip" className="min-h-[calc(100dvh-4rem)] md:min-h[calc(100dvh-5rem)]">
-        <Pricing
+    <div className="h-screen bg-zinc-950 flex overflow-hidden">
+      <AppSidebar user={user} />
+      <main className="flex-1 overflow-y-auto">
+        <PricingContent
           user={user}
           products={products ?? []}
           subscription={subscription}
         />
       </main>
-      <Footer />
-    </>
+    </div>
   );
 }

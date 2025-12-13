@@ -4,4 +4,9 @@
  */
 
 export { UsageTracker, type UsageTrackerConfig } from './usage-tracker';
-export { QuotaManager, type QuotaManagerConfig, PLAN_LIMITS } from './quota-manager';
+export {
+  QuotaManager,
+  type QuotaManagerConfig,
+  PLAN_LIMITS,
+  DEFAULT_FREE_LIMITS
+} from './quota-manager';

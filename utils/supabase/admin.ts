@@ -213,6 +213,12 @@ const manageSubscriptionStatusChange = async (
   customerId: string,
   createAction = false
 ) => {
+  console.log(`📝 Managing subscription status change:`, {
+    subscriptionId,
+    customerId,
+    createAction
+  });
+
   // Get customer's UUID from mapping table.
   const { data: customerData, error: noCustomerError } = await supabaseAdmin
     .from('customers')
@@ -220,8 +226,15 @@ const manageSubscriptionStatusChange = async (
     .eq('stripe_customer_id', customerId)
     .single();
 
-  if (noCustomerError)
+  if (noCustomerError) {
+    console.error('❌ Customer lookup failed:', {
+      customerId,
+      error: noCustomerError
+    });
     throw new Error(`Customer lookup failed: ${noCustomerError.message}`);
+  }
+
+  console.log(`✅ Found customer UUID: ${customerData?.id}`);
 
   const { id: uuid } = customerData!;
 
@@ -275,65 +288,84 @@ const manageSubscriptionStatusChange = async (
   // ============================================
   // SYNC USER QUOTA BASED ON SUBSCRIPTION
   // ============================================
+  //
+  // Quota limits are read from Stripe product metadata.
+  // Configure your products in Stripe Dashboard with these metadata fields:
+  //   - maxTokensPerMonth: number (e.g., "500000")
+  //   - maxCallsPerMinute: number (e.g., "20")
+  //   - maxCallsPerDay: number (e.g., "1000")
+  //   - maxCostPerMonth: number (e.g., "10")
+  //   - allowedModels: comma-separated string (e.g., "gpt-4o-mini,gpt-4o,claude-3-5-sonnet-20241022")
+  //   - allowedProviders: comma-separated string (e.g., "openai,anthropic")
+  //
+  // If metadata is not set, defaults will be used based on subscription status.
+  // ============================================
   try {
-    // Determine plan from product metadata or name
     const product = subscription.items.data[0].price.product as Stripe.Product;
-    const productName = product.name?.toLowerCase() || '';
-    const productMetadata = product.metadata || {};
+    const metadata = product.metadata || {};
 
-    let planId = 'free';
-    if (productMetadata.plan) {
-      planId = productMetadata.plan;
-    } else if (productName.includes('enterprise')) {
-      planId = 'enterprise';
-    } else if (productName.includes('pro')) {
-      planId = 'pro';
-    } else if (productName.includes('starter')) {
-      planId = 'starter';
-    }
+    console.log(`📦 Product detected:`, {
+      name: product.name,
+      id: product.id,
+      metadata: metadata,
+      subscriptionStatus: subscription.status
+    });
+
+    // Default limits for free tier (no active subscription)
+    const FREE_LIMITS = {
+      maxTokensPerMonth: 50000,
+      maxCallsPerMinute: 5,
+      maxCallsPerDay: 100,
+      maxCostPerMonth: 1,
+      allowedModels: ['gpt-4o-mini', 'claude-3-haiku-20240307'],
+      allowedProviders: ['openai', 'anthropic']
+    };
+
+    // Default limits for paid subscriptions (fallback if no metadata)
+    const DEFAULT_PAID_LIMITS = {
+      maxTokensPerMonth: 500000,
+      maxCallsPerMinute: 20,
+      maxCallsPerDay: 1000,
+      maxCostPerMonth: 50,
+      allowedModels: ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'],
+      allowedProviders: ['openai', 'anthropic']
+    };
+
+    // Use product name as plan ID (lowercase, no spaces)
+    let planId = product.name?.toLowerCase().replace(/\s+/g, '_') || 'unknown';
 
     // If subscription is not active, reset to free
     if (!['active', 'trialing'].includes(subscription.status)) {
       planId = 'free';
     }
 
-    // Plan limits configuration
-    const PLAN_LIMITS: Record<string, any> = {
-      free: {
-        maxTokensPerMonth: 50000,
-        maxCallsPerMinute: 5,
-        maxCallsPerDay: 100,
-        maxCostPerMonth: 1,
-        allowedModels: ['gpt-4o-mini', 'claude-3-haiku-20240307'],
-        allowedProviders: ['openai', 'anthropic']
-      },
-      starter: {
-        maxTokensPerMonth: 500000,
-        maxCallsPerMinute: 20,
-        maxCallsPerDay: 1000,
-        maxCostPerMonth: 10,
-        allowedModels: ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'],
-        allowedProviders: ['openai', 'anthropic']
-      },
-      pro: {
-        maxTokensPerMonth: 2000000,
-        maxCallsPerMinute: 60,
-        maxCallsPerDay: 5000,
-        maxCostPerMonth: 50,
-        allowedModels: ['gpt-4o-mini', 'gpt-4o', 'gpt-4-turbo', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022', 'claude-sonnet-4-20250514'],
-        allowedProviders: ['openai', 'anthropic', 'google', 'mistral']
-      },
-      enterprise: {
-        maxTokensPerMonth: 10000000,
-        maxCallsPerMinute: 200,
-        maxCallsPerDay: 50000,
-        maxCostPerMonth: 500,
-        allowedModels: [],
-        allowedProviders: ['openai', 'anthropic', 'google', 'mistral', 'custom']
-      }
-    };
-
-    const limits = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
+    // Build limits from product metadata or use defaults
+    let limits;
+    if (planId === 'free') {
+      limits = FREE_LIMITS;
+    } else {
+      // Parse limits from Stripe product metadata
+      limits = {
+        maxTokensPerMonth: metadata.maxTokensPerMonth
+          ? parseInt(metadata.maxTokensPerMonth, 10)
+          : DEFAULT_PAID_LIMITS.maxTokensPerMonth,
+        maxCallsPerMinute: metadata.maxCallsPerMinute
+          ? parseInt(metadata.maxCallsPerMinute, 10)
+          : DEFAULT_PAID_LIMITS.maxCallsPerMinute,
+        maxCallsPerDay: metadata.maxCallsPerDay
+          ? parseInt(metadata.maxCallsPerDay, 10)
+          : DEFAULT_PAID_LIMITS.maxCallsPerDay,
+        maxCostPerMonth: metadata.maxCostPerMonth
+          ? parseFloat(metadata.maxCostPerMonth)
+          : DEFAULT_PAID_LIMITS.maxCostPerMonth,
+        allowedModels: metadata.allowedModels
+          ? metadata.allowedModels.split(',').map((m: string) => m.trim())
+          : DEFAULT_PAID_LIMITS.allowedModels,
+        allowedProviders: metadata.allowedProviders
+          ? metadata.allowedProviders.split(',').map((p: string) => p.trim())
+          : DEFAULT_PAID_LIMITS.allowedProviders
+      };
+    }
 
     // Upsert user quota
     const { error: quotaError } = await supabaseAdmin
@@ -349,7 +381,7 @@ const manageSubscriptionStatusChange = async (
     if (quotaError) {
       console.error(`Failed to update user quota: ${quotaError.message}`);
     } else {
-      console.log(`Updated quota for user [${uuid}] to plan [${planId}]`);
+      console.log(`✅ Updated quota for user [${uuid}] to plan [${planId}]`, limits);
     }
   } catch (quotaSyncError) {
     console.error('Quota sync error:', quotaSyncError);

@@ -9,9 +9,15 @@
       "method": "post",
       "params": {
         "name": "Hobby",
-        "description": "Hobby product description",
+        "description": "Perfect for side projects and experimentation",
         "metadata": {
-          "index": 0
+          "index": "0",
+          "maxTokensPerMonth": "100000",
+          "maxCallsPerMinute": "10",
+          "maxCallsPerDay": "200",
+          "maxCostPerMonth": "5",
+          "allowedModels": "gpt-4o-mini,claude-3-5-haiku-20241022",
+          "allowedProviders": "openai,anthropic"
         }
       }
     },
@@ -51,9 +57,15 @@
       "method": "post",
       "params": {
         "name": "Freelancer",
-        "description": "Freelancer product description",
+        "description": "For professionals and small teams",
         "metadata": {
-          "index": 1
+          "index": "1",
+          "maxTokensPerMonth": "500000",
+          "maxCallsPerMinute": "30",
+          "maxCallsPerDay": "1000",
+          "maxCostPerMonth": "25",
+          "allowedModels": "gpt-4o-mini,gpt-4o,claude-3-5-haiku-20241022,claude-3-5-sonnet-20241022",
+          "allowedProviders": "openai,anthropic"
         }
       }
     },

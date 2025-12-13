@@ -15,7 +15,7 @@ import {
   type ModelProvider,
   calculateCost,
 } from '@/lib/ai/langchain';
-import { QuotaManager, PLAN_LIMITS } from '@/lib/ai';
+import { QuotaManager } from '@/lib/ai';
 import { getSubscription } from '@/utils/supabase/queries';
 
 // ============================================
@@ -344,24 +344,26 @@ export async function GET() {
     // Get user subscription and plan
     const subscription = await getSubscription(supabase);
     const userPlan = getPlanFromSubscription(subscription);
-    const planLimits = PLAN_LIMITS[userPlan] || PLAN_LIMITS.free;
 
-    // Get quota info
+    // Get quota info from database (includes limits from Stripe metadata)
     const quotaManager = getQuotaManager();
     const quota = await quotaManager.getQuota(user.id);
     const usage = await quotaManager.getCurrentUsage(user.id, quota);
 
-    // Available models based on plan
+    // Use limits from database (set by Stripe webhook from product metadata)
+    const quotaLimits = quota.limits;
+
+    // Available models based on plan limits from database
     const availableModels = {
       openai: [
-        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('gpt-4o-mini') },
-        { id: 'gpt-4o', name: 'GPT-4o', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('gpt-4o') },
-        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('gpt-4-turbo') },
+        { id: 'gpt-4o-mini', name: 'GPT-4o Mini', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('gpt-4o-mini') },
+        { id: 'gpt-4o', name: 'GPT-4o', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('gpt-4o') },
+        { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('gpt-4-turbo') },
       ],
       anthropic: [
-        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('claude-3-5-haiku-20241022') },
-        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('claude-3-5-sonnet-20241022') },
-        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', available: planLimits.allowedModels.length === 0 || planLimits.allowedModels.includes('claude-sonnet-4-20250514') },
+        { id: 'claude-3-5-haiku-20241022', name: 'Claude 3.5 Haiku', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('claude-3-5-haiku-20241022') },
+        { id: 'claude-3-5-sonnet-20241022', name: 'Claude 3.5 Sonnet', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('claude-3-5-sonnet-20241022') },
+        { id: 'claude-sonnet-4-20250514', name: 'Claude Sonnet 4', available: quotaLimits.allowedModels.length === 0 || quotaLimits.allowedModels.includes('claude-sonnet-4-20250514') },
       ],
     };
 
@@ -370,18 +372,18 @@ export async function GET() {
         id: user.id,
         email: user.email,
       },
-      plan: userPlan,
+      plan: quota.planId, // Use plan from quota DB (set by Stripe webhook)
       subscription: subscription ? {
         status: subscription.status,
         productName: subscription.prices?.products?.name,
       } : null,
       quota: {
-        limits: planLimits,
+        limits: quotaLimits,
         usage,
         remaining: {
-          tokens: Math.max(0, planLimits.maxTokensPerMonth - usage.tokensThisMonth),
-          callsToday: Math.max(0, planLimits.maxCallsPerDay - usage.callsToday),
-          cost: Math.max(0, planLimits.maxCostPerMonth - usage.costThisMonth),
+          tokens: Math.max(0, quotaLimits.maxTokensPerMonth - usage.tokensThisMonth),
+          callsToday: Math.max(0, quotaLimits.maxCallsPerDay - usage.callsToday),
+          cost: Math.max(0, quotaLimits.maxCostPerMonth - usage.costThisMonth),
         },
       },
       models: availableModels,

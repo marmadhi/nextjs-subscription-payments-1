@@ -19,47 +19,23 @@ export interface QuotaManagerConfig {
   defaultLimits?: Partial<QuotaLimits>;
 }
 
-// Plan-based default limits
+// Default limits for users without a subscription (free tier)
+// These are only used as fallback when creating a new quota.
+// Actual plan limits are read from Stripe product metadata and stored in the database.
+export const DEFAULT_FREE_LIMITS: QuotaLimits = {
+  maxTokensPerMonth: 50000,
+  maxCallsPerMinute: 5,
+  maxCallsPerDay: 100,
+  maxCostPerMonth: 1,
+  allowedModels: ['gpt-4o-mini', 'claude-3-haiku-20240307'],
+  allowedProviders: ['openai', 'anthropic']
+};
+
+// Legacy PLAN_LIMITS export for backwards compatibility
+// NOTE: For paid plans, limits are now read from Stripe product metadata
+// and stored in the user_quotas table when subscription is created/updated.
 export const PLAN_LIMITS: Record<string, QuotaLimits> = {
-  free: {
-    maxTokensPerMonth: 50000,
-    maxCallsPerMinute: 5,
-    maxCallsPerDay: 100,
-    maxCostPerMonth: 1,
-    allowedModels: ['gpt-4o-mini', 'claude-3-haiku-20240307'],
-    allowedProviders: ['openai', 'anthropic']
-  },
-  starter: {
-    maxTokensPerMonth: 500000,
-    maxCallsPerMinute: 20,
-    maxCallsPerDay: 1000,
-    maxCostPerMonth: 10,
-    allowedModels: ['gpt-4o-mini', 'gpt-4o', 'claude-3-5-haiku-20241022', 'claude-3-5-sonnet-20241022'],
-    allowedProviders: ['openai', 'anthropic']
-  },
-  pro: {
-    maxTokensPerMonth: 2000000,
-    maxCallsPerMinute: 60,
-    maxCallsPerDay: 5000,
-    maxCostPerMonth: 50,
-    allowedModels: [
-      'gpt-4o-mini',
-      'gpt-4o',
-      'gpt-4-turbo',
-      'claude-3-5-haiku-20241022',
-      'claude-3-5-sonnet-20241022',
-      'claude-sonnet-4-20250514'
-    ],
-    allowedProviders: ['openai', 'anthropic', 'google', 'mistral']
-  },
-  enterprise: {
-    maxTokensPerMonth: 10000000,
-    maxCallsPerMinute: 200,
-    maxCallsPerDay: 50000,
-    maxCostPerMonth: 500,
-    allowedModels: [], // Empty means all models allowed
-    allowedProviders: ['openai', 'anthropic', 'google', 'mistral', 'custom']
-  }
+  free: DEFAULT_FREE_LIMITS
 };
 
 // In-memory rate limiting cache
@@ -76,7 +52,7 @@ export class QuotaManager {
     this.quotaTableName = config.quotaTableName || 'user_quotas';
     this.usageTableName = config.usageTableName || 'ai_usage_logs';
     this.defaultLimits = {
-      ...PLAN_LIMITS.free,
+      ...DEFAULT_FREE_LIMITS,
       ...config.defaultLimits
     };
   }
@@ -105,6 +81,8 @@ export class QuotaManager {
 
   /**
    * Create quota for a user
+   * Note: For paid plans, limits should be provided via customLimits
+   * (typically from Stripe product metadata)
    */
   async createQuota(
     userId: string,
@@ -112,7 +90,7 @@ export class QuotaManager {
     customLimits?: Partial<QuotaLimits>
   ): Promise<UserQuota> {
     const limits = {
-      ...(PLAN_LIMITS[planId] || this.defaultLimits),
+      ...this.defaultLimits,
       ...customLimits
     };
 
@@ -144,6 +122,8 @@ export class QuotaManager {
 
   /**
    * Update user's plan
+   * Note: For paid plans, limits should be provided via customLimits
+   * (typically from Stripe product metadata)
    */
   async updatePlan(
     userId: string,
@@ -151,7 +131,7 @@ export class QuotaManager {
     customLimits?: Partial<QuotaLimits>
   ): Promise<UserQuota> {
     const limits = {
-      ...(PLAN_LIMITS[planId] || this.defaultLimits),
+      ...this.defaultLimits,
       ...customLimits
     };
 

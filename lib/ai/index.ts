@@ -51,6 +51,7 @@ export {
   UsageTracker,
   QuotaManager,
   PLAN_LIMITS,
+  DEFAULT_FREE_LIMITS,
   type UsageTrackerConfig,
   type QuotaManagerConfig
 } from './tracking';

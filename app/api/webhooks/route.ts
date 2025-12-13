@@ -79,9 +79,15 @@ export async function POST(req: Request) {
           throw new Error('Unhandled relevant event!');
       }
     } catch (error) {
-      console.log(error);
+      console.error('❌ Webhook handler error:', error);
+      console.error('Event type:', event.type);
+      console.error('Event ID:', event.id);
+      if (error instanceof Error) {
+        console.error('Error message:', error.message);
+        console.error('Error stack:', error.stack);
+      }
       return new Response(
-        'Webhook handler failed. View your Next.js function logs.',
+        `Webhook handler failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
         {
           status: 400
         }

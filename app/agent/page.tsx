@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import Button from '@/components/ui/Button';
 
 interface Message {
   id: string;
@@ -53,6 +52,7 @@ export default function AgentPage() {
   const router = useRouter();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [config, setConfig] = useState<AgentConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -72,8 +72,10 @@ export default function AgentPage() {
   // Conversation history
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // Load config and conversations on mount
   useEffect(() => {
@@ -83,10 +85,18 @@ export default function AgentPage() {
 
   // Auto-scroll to bottom only if user hasn't scrolled up
   useEffect(() => {
-    if (autoScroll) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (autoScroll && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'instant' });
     }
   }, [messages, streamingContent, autoScroll]);
+
+  // Auto-resize textarea
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 200) + 'px';
+    }
+  }, [inputMessage]);
 
   // Detect if user scrolls up to disable auto-scroll
   const handleScroll = useCallback(() => {
@@ -110,6 +120,18 @@ export default function AgentPage() {
       const data = await response.json();
       setConfig(data);
       setError(null);
+
+      // Set initial provider and model based on what's available
+      const openaiModels = data.models?.openai?.filter((m: Model) => m.available) || [];
+      const anthropicModels = data.models?.anthropic?.filter((m: Model) => m.available) || [];
+
+      if (openaiModels.length > 0) {
+        setSelectedProvider('openai');
+        setSelectedModel(openaiModels[0].id);
+      } else if (anthropicModels.length > 0) {
+        setSelectedProvider('anthropic');
+        setSelectedModel(anthropicModels[0].id);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load');
     } finally {
@@ -215,7 +237,6 @@ export default function AgentPage() {
             tokens: m.tokens,
           }))
         );
-        setShowHistory(false);
       }
     } catch (err) {
       console.error('Failed to load conversation:', err);
@@ -224,7 +245,10 @@ export default function AgentPage() {
     }
   };
 
-  const deleteConversation = async (conversationId: string) => {
+  const deleteConversation = async (conversationId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('Delete this conversation?')) return;
+
     try {
       const response = await fetch(`/api/ai/conversations?id=${conversationId}`, {
         method: 'DELETE',
@@ -259,7 +283,12 @@ export default function AgentPage() {
     setCurrentSteps([]);
     setStreamingContent('');
     setError(null);
-    setAutoScroll(true); // Re-enable auto-scroll when sending a new message
+    setAutoScroll(true);
+
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
 
     // Create conversation if needed
     let conversationId = currentConversationId;
@@ -387,12 +416,25 @@ export default function AgentPage() {
     setStreamingContent('');
     setCurrentSteps([]);
     setError(null);
-    setShowHistory(false);
   };
 
   const getAvailableModels = (): Model[] => {
     if (!config) return [];
     return config.models[selectedProvider].filter(m => m.available);
+  };
+
+  const getAvailableProviders = (): Array<{ id: 'openai' | 'anthropic'; name: string }> => {
+    if (!config) return [];
+    const providers: Array<{ id: 'openai' | 'anthropic'; name: string }> = [];
+
+    if (config.models.openai.some(m => m.available)) {
+      providers.push({ id: 'openai', name: 'OpenAI' });
+    }
+    if (config.models.anthropic.some(m => m.available)) {
+      providers.push({ id: 'anthropic', name: 'Anthropic' });
+    }
+
+    return providers;
   };
 
   const formatDate = (dateString: string) => {
@@ -410,102 +452,236 @@ export default function AgentPage() {
     return date.toLocaleDateString();
   };
 
+  const groupConversationsByDate = () => {
+    const today: Conversation[] = [];
+    const yesterday: Conversation[] = [];
+    const lastWeek: Conversation[] = [];
+    const older: Conversation[] = [];
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterdayStart = new Date(todayStart.getTime() - 86400000);
+    const weekStart = new Date(todayStart.getTime() - 7 * 86400000);
+
+    conversations.forEach(conv => {
+      const date = new Date(conv.updated_at);
+      if (date >= todayStart) {
+        today.push(conv);
+      } else if (date >= yesterdayStart) {
+        yesterday.push(conv);
+      } else if (date >= weekStart) {
+        lastWeek.push(conv);
+      } else {
+        older.push(conv);
+      }
+    });
+
+    return { today, yesterday, lastWeek, older };
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-black flex items-center justify-center">
-        <div className="text-white text-xl">Loading agent...</div>
+      <div className="h-screen bg-zinc-950 flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+          <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+          <div className="w-2 h-2 bg-zinc-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+        </div>
       </div>
     );
   }
 
+  const groupedConversations = groupConversationsByDate();
+
   return (
-    <section className="min-h-screen bg-black pb-12">
-      {/* Header */}
-      <div className="max-w-6xl px-4 py-8 mx-auto sm:px-6 lg:px-8">
-        <div className="sm:align-center sm:flex sm:flex-col">
-          <h1 className="text-4xl font-extrabold text-white sm:text-center sm:text-5xl">
-            AI Agent
-          </h1>
-          <p className="max-w-2xl m-auto mt-3 text-lg text-zinc-400 sm:text-center">
-            Powered by LangGraph & LangSmith
-          </p>
+    <div className="h-screen bg-zinc-950 flex overflow-hidden">
+      {/* Sidebar */}
+      <aside
+        className={`${sidebarOpen ? 'w-64' : 'w-0'} flex-shrink-0 bg-zinc-900 border-r border-zinc-800 flex flex-col transition-all duration-300 overflow-hidden`}
+      >
+        {/* Sidebar Header */}
+        <div className="p-3 border-b border-zinc-800">
+          <button
+            onClick={startNewConversation}
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg border border-zinc-700 hover:bg-zinc-800 text-zinc-200 text-sm transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+            </svg>
+            New chat
+          </button>
         </div>
-      </div>
 
-      <div className="max-w-6xl px-4 mx-auto sm:px-6 lg:px-8">
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Sidebar - Settings & Stats */}
-          <div className="lg:col-span-1 space-y-4">
-            {/* New Conversation Button */}
-            <button
-              onClick={startNewConversation}
-              className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg py-3 transition-colors"
+        {/* Conversations List */}
+        <div className="flex-1 overflow-y-auto py-2">
+          {loadingHistory && (
+            <div className="px-3 py-2 text-zinc-500 text-sm">Loading...</div>
+          )}
+
+          {/* Today */}
+          {groupedConversations.today.length > 0 && (
+            <div className="mb-2">
+              <div className="px-3 py-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Today</div>
+              {groupedConversations.today.map(conv => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={currentConversationId === conv.id}
+                  onClick={() => loadConversation(conv.id)}
+                  onDelete={(e) => deleteConversation(conv.id, e)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Yesterday */}
+          {groupedConversations.yesterday.length > 0 && (
+            <div className="mb-2">
+              <div className="px-3 py-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Yesterday</div>
+              {groupedConversations.yesterday.map(conv => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={currentConversationId === conv.id}
+                  onClick={() => loadConversation(conv.id)}
+                  onDelete={(e) => deleteConversation(conv.id, e)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Last 7 days */}
+          {groupedConversations.lastWeek.length > 0 && (
+            <div className="mb-2">
+              <div className="px-3 py-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Previous 7 days</div>
+              {groupedConversations.lastWeek.map(conv => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={currentConversationId === conv.id}
+                  onClick={() => loadConversation(conv.id)}
+                  onDelete={(e) => deleteConversation(conv.id, e)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Older */}
+          {groupedConversations.older.length > 0 && (
+            <div className="mb-2">
+              <div className="px-3 py-1 text-xs font-medium text-zinc-500 uppercase tracking-wider">Older</div>
+              {groupedConversations.older.map(conv => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={currentConversationId === conv.id}
+                  onClick={() => loadConversation(conv.id)}
+                  onDelete={(e) => deleteConversation(conv.id, e)}
+                />
+              ))}
+            </div>
+          )}
+
+          {conversations.length === 0 && !loadingHistory && (
+            <div className="px-3 py-8 text-center text-zinc-500 text-sm">
+              No conversations yet
+            </div>
+          )}
+        </div>
+
+        {/* Sidebar Footer - Navigation & Usage */}
+        <div className="border-t border-zinc-800">
+          {/* Navigation Links */}
+          <div className="p-2 space-y-1">
+            <a
+              href="/"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors text-sm"
             >
-              + New Conversation
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+              </svg>
+              Home
+            </a>
+            <a
+              href="/pricing"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Pricing
+            </a>
+            <a
+              href="/account"
+              className="flex items-center gap-3 px-3 py-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800/50 transition-colors text-sm"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Account
+            </a>
+          </div>
+
+          {/* Usage Stats */}
+          <div className="p-3 border-t border-zinc-800">
+            <div className="text-xs text-zinc-500 mb-2">Usage</div>
+            <div className="space-y-2">
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-zinc-400">Tokens</span>
+                  <span className="text-zinc-300">{(config?.quota?.remaining?.tokens ?? 0).toLocaleString()}</span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1">
+                  <div
+                    className="bg-blue-500 h-1 rounded-full transition-all"
+                    style={{
+                      width: `${config?.quota?.limits?.maxTokensPerMonth ? Math.min(100, (((config.quota.limits.maxTokensPerMonth - (config.quota.remaining?.tokens ?? 0)) / config.quota.limits.maxTokensPerMonth) * 100)) : 0}%`
+                    }}
+                  />
+                </div>
+              </div>
+              <div>
+                <div className="flex justify-between text-xs mb-1">
+                  <span className="text-zinc-400">Daily calls</span>
+                  <span className="text-zinc-300">{config?.quota?.remaining?.callsToday ?? 0}</span>
+                </div>
+                <div className="w-full bg-zinc-800 rounded-full h-1">
+                  <div
+                    className="bg-emerald-500 h-1 rounded-full transition-all"
+                    style={{
+                      width: `${config?.quota?.limits?.maxCallsPerDay ? Math.min(100, (((config.quota.limits.maxCallsPerDay - (config.quota.remaining?.callsToday ?? 0)) / config.quota.limits.maxCallsPerDay) * 100)) : 0}%`
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="mt-3 pt-3 border-t border-zinc-800">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-zinc-400 capitalize">{config?.plan || 'Free'} Plan</span>
+                <a href="/pricing" className="text-blue-400 hover:text-blue-300">Upgrade</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col min-w-0">
+        {/* Header */}
+        <header className="h-14 flex-shrink-0 border-b border-zinc-800 flex items-center justify-between px-4">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+              title={sidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+            >
+              <svg className="w-5 h-5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
             </button>
-
-            {/* Plan & Quota Card */}
-            <div className="border border-zinc-700 rounded-lg p-4 bg-zinc-900/50">
-              <h3 className="text-lg font-semibold text-white mb-3">Your Plan</h3>
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-zinc-400">Plan</span>
-                  <span className="text-white font-medium capitalize">{config?.plan || 'Free'}</span>
-                </div>
-                {config?.subscription && (
-                  <div className="flex justify-between text-sm">
-                    <span className="text-zinc-400">Status</span>
-                    <span className="text-green-400 capitalize">{config.subscription.status}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Usage Card */}
-            <div className="border border-zinc-700 rounded-lg p-4 bg-zinc-900/50">
-              <h3 className="text-lg font-semibold text-white mb-3">Usage</h3>
-              <div className="space-y-3">
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-zinc-400">Tokens</span>
-                    <span className="text-zinc-300">
-                      {config?.quota.remaining.tokens.toLocaleString()} remaining
-                    </span>
-                  </div>
-                  <div className="w-full bg-zinc-700 rounded-full h-2">
-                    <div
-                      className="bg-blue-500 h-2 rounded-full"
-                      style={{
-                        width: `${Math.min(100, ((config?.quota.limits.maxTokensPerMonth - config?.quota.remaining.tokens) / config?.quota.limits.maxTokensPerMonth) * 100)}%`
-                      }}
-                    />
-                  </div>
-                </div>
-                <div>
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-zinc-400">Calls Today</span>
-                    <span className="text-zinc-300">
-                      {config?.quota.remaining.callsToday} remaining
-                    </span>
-                  </div>
-                  <div className="w-full bg-zinc-700 rounded-full h-2">
-                    <div
-                      className="bg-green-500 h-2 rounded-full"
-                      style={{
-                        width: `${Math.min(100, ((config?.quota.limits.maxCallsPerDay - config?.quota.remaining.callsToday) / config?.quota.limits.maxCallsPerDay) * 100)}%`
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Model Selector */}
-            <div className="border border-zinc-700 rounded-lg p-4 bg-zinc-900/50">
-              <h3 className="text-lg font-semibold text-white mb-3">Model</h3>
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-1">Provider</label>
+            <div className="flex items-center gap-2">
+              {getAvailableProviders().length > 1 ? (
+                <>
                   <select
                     value={selectedProvider}
                     onChange={(e) => {
@@ -517,212 +693,233 @@ export default function AgentPage() {
                       }
                     }}
                     disabled={messages.length > 0}
-                    className="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
+                    className="bg-transparent border-none text-zinc-300 text-sm focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    <option value="openai">OpenAI</option>
-                    <option value="anthropic">Anthropic</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm text-zinc-400 mb-1">Model</label>
-                  <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    disabled={messages.length > 0}
-                    className="w-full bg-zinc-800 border border-zinc-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-blue-500 disabled:opacity-50"
-                  >
-                    {getAvailableModels().map(model => (
-                      <option key={model.id} value={model.id}>
-                        {model.name}
+                    {getAvailableProviders().map(provider => (
+                      <option key={provider.id} value={provider.id} className="bg-zinc-900">
+                        {provider.name}
                       </option>
                     ))}
                   </select>
-                </div>
-                {messages.length > 0 && (
-                  <p className="text-xs text-zinc-500">Start a new conversation to change models</p>
-                )}
-              </div>
+                  <span className="text-zinc-600">/</span>
+                </>
+              ) : getAvailableProviders().length === 1 ? (
+                <>
+                  <span className="text-zinc-300 text-sm">{getAvailableProviders()[0].name}</span>
+                  <span className="text-zinc-600">/</span>
+                </>
+              ) : null}
+              <select
+                value={selectedModel}
+                onChange={(e) => setSelectedModel(e.target.value)}
+                disabled={messages.length > 0}
+                className="bg-transparent border-none text-zinc-300 text-sm focus:outline-none cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {getAvailableModels().map(model => (
+                  <option key={model.id} value={model.id} className="bg-zinc-900">
+                    {model.name}
+                  </option>
+                ))}
+              </select>
             </div>
-
-            {/* LangSmith Status */}
-            {config?.langsmith.enabled && (
-              <div className="border border-zinc-700 rounded-lg p-4 bg-zinc-900/50">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-400" />
-                  <span className="text-sm text-zinc-300">LangSmith Active</span>
-                </div>
-                <p className="text-xs text-zinc-500 mt-1">Project: {config.langsmith.project}</p>
-              </div>
-            )}
-
-            {/* History Toggle */}
-            <button
-              onClick={() => setShowHistory(!showHistory)}
-              className="w-full text-sm text-zinc-400 hover:text-white border border-zinc-700 rounded-lg py-2 transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              {showHistory ? 'Hide History' : 'Show History'} ({conversations.length})
-            </button>
           </div>
+          <div className="flex items-center gap-2">
+            {config?.langsmith.enabled && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-zinc-800/50 text-xs text-zinc-400">
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                LangSmith
+              </div>
+            )}
+          </div>
+        </header>
 
-          {/* Main Chat Area or History */}
-          <div className="lg:col-span-3">
-            {showHistory ? (
-              /* Conversation History */
-              <div className="border border-zinc-700 rounded-lg bg-zinc-900/50 p-4">
-                <h2 className="text-xl font-semibold text-white mb-4">Conversation History</h2>
-                {loadingHistory && (
-                  <div className="text-center py-8 text-zinc-400">Loading...</div>
-                )}
-                {!loadingHistory && conversations.length === 0 && (
-                  <div className="text-center py-8 text-zinc-500">
-                    No conversations yet. Start a new one!
+        {/* Messages Area */}
+        <div
+          ref={messagesContainerRef}
+          onScroll={handleScroll}
+          className="flex-1 overflow-y-auto"
+        >
+          <div className="max-w-3xl mx-auto px-4 py-6">
+            {messages.length === 0 && !streamingContent && (
+              <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center">
+                <div className="w-12 h-12 rounded-full bg-zinc-800 flex items-center justify-center mb-4">
+                  <svg className="w-6 h-6 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                  </svg>
+                </div>
+                <h2 className="text-xl font-medium text-zinc-200 mb-2">How can I help you today?</h2>
+                <p className="text-zinc-500 text-sm max-w-md">
+                  Start a conversation with the AI assistant. Your messages are saved automatically.
+                </p>
+              </div>
+            )}
+
+            {messages.map((message) => (
+              <div key={message.id} className="mb-6">
+                <div className={`flex gap-4 ${message.role === 'user' ? '' : ''}`}>
+                  {/* Avatar */}
+                  <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center ${
+                    message.role === 'user'
+                      ? 'bg-blue-600'
+                      : 'bg-emerald-600'
+                  }`}>
+                    {message.role === 'user' ? (
+                      <svg className="w-4 h-4 text-white" fill="currentColor" viewBox="0 0 20 20">
+                        <path d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                    )}
                   </div>
-                )}
-                <div className="space-y-2 max-h-[calc(100vh-400px)] overflow-y-auto">
-                  {conversations.map((conv) => (
-                    <div
-                      key={conv.id}
-                      className={`p-3 rounded-lg border cursor-pointer transition-colors ${
-                        currentConversationId === conv.id
-                          ? 'border-blue-500 bg-blue-900/20'
-                          : 'border-zinc-700 hover:border-zinc-500'
-                      }`}
-                      onClick={() => loadConversation(conv.id)}
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1 min-w-0">
-                          <p className="text-white font-medium truncate">{conv.title}</p>
-                          <p className="text-xs text-zinc-500 mt-1">
-                            {conv.model} | {formatDate(conv.updated_at)}
-                          </p>
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (confirm('Delete this conversation?')) {
-                              deleteConversation(conv.id);
-                            }
-                          }}
-                          className="text-zinc-500 hover:text-red-400 p-1"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </div>
+                  {/* Content */}
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-zinc-300 mb-1">
+                      {message.role === 'user' ? 'You' : 'Assistant'}
                     </div>
-                  ))}
+                    <div className="text-zinc-100 whitespace-pre-wrap break-words">
+                      {message.content}
+                    </div>
+                  </div>
                 </div>
               </div>
-            ) : (
-              /* Chat Interface */
-              <div className="border border-zinc-700 rounded-lg bg-zinc-900/50 flex flex-col h-[calc(100vh-280px)]">
-                {/* Messages */}
-                <div
-                  ref={messagesContainerRef}
-                  onScroll={handleScroll}
-                  className="flex-1 overflow-y-auto p-4 space-y-4"
-                >
-                  {messages.length === 0 && !streamingContent && (
-                    <div className="text-center text-zinc-500 py-12">
-                      <p className="text-lg">Start a conversation with the AI Agent</p>
-                      <p className="text-sm mt-2">Your messages will appear here</p>
-                    </div>
-                  )}
+            ))}
 
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                          message.role === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-zinc-800 text-zinc-100'
-                        }`}
-                      >
-                        <p className="whitespace-pre-wrap">{message.content}</p>
-                        <p className="text-xs mt-2 opacity-60">
-                          {message.timestamp.toLocaleTimeString()}
-                        </p>
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Streaming content */}
-                  {streamingContent && (
-                    <div className="flex justify-start">
-                      <div className="max-w-[80%] rounded-lg px-4 py-3 bg-zinc-800 text-zinc-100">
-                        <p className="whitespace-pre-wrap">{streamingContent}</p>
-                        <span className="inline-block w-2 h-4 bg-blue-400 animate-pulse ml-1" />
-                      </div>
-                    </div>
-                  )}
-
-                  <div ref={messagesEndRef} />
-                </div>
-
-                {/* Agent Steps - Fixed above input */}
-                {currentSteps.length > 0 && (
-                  <div className="border-t border-zinc-600 p-3 bg-zinc-800">
-                    <p className="text-xs text-zinc-400 mb-2 font-medium">Agent Progress</p>
-                    <div className="flex flex-wrap gap-3">
-                      {currentSteps.map((step, index) => (
-                        <div key={index} className="flex items-center gap-2 text-sm">
-                          <div className={`w-2 h-2 rounded-full ${
-                            index === currentSteps.length - 1
-                              ? 'bg-blue-400 animate-pulse'
-                              : 'bg-green-400'
-                          }`} />
-                          <span className="text-zinc-300">{step.message}</span>
-                        </div>
-                      ))}
+            {/* Streaming content */}
+            {streamingContent && (
+              <div className="mb-6">
+                <div className="flex gap-4">
+                  <div className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center bg-emerald-600">
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-medium text-zinc-300 mb-1">Assistant</div>
+                    <div className="text-zinc-100 whitespace-pre-wrap break-words">
+                      {streamingContent}
+                      <span className="inline-block w-2 h-4 bg-zinc-400 animate-pulse ml-0.5" />
                     </div>
                   </div>
-                )}
-
-                {/* Error display */}
-                {error && (
-                  <div className="mx-4 mb-2 p-3 bg-red-900/50 border border-red-700 rounded-lg text-red-200 text-sm">
-                    {error}
-                  </div>
-                )}
-
-                {/* Input Area */}
-                <div className="border-t border-zinc-700 p-4">
-                  <div className="flex gap-3">
-                    <textarea
-                      value={inputMessage}
-                      onChange={(e) => setInputMessage(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      placeholder="Type your message... (Enter to send, Shift+Enter for new line)"
-                      rows={2}
-                      className="flex-1 bg-zinc-800 border border-zinc-600 rounded-lg px-4 py-3 text-white placeholder-zinc-500 resize-none focus:outline-none focus:border-blue-500"
-                      disabled={sending}
-                    />
-                    <Button
-                      onClick={sendMessage}
-                      disabled={!inputMessage.trim() || sending}
-                      loading={sending}
-                      className="px-6"
-                    >
-                      Send
-                    </Button>
-                  </div>
-                  <p className="text-xs text-zinc-500 mt-2">
-                    Model: {selectedModel} | Provider: {selectedProvider}
-                    {currentConversationId && ' | Saved'}
-                  </p>
                 </div>
               </div>
             )}
+
+            {/* Agent Steps */}
+            {currentSteps.length > 0 && (
+              <div className="mb-6 ml-12">
+                <div className="bg-zinc-900/50 rounded-lg p-3 border border-zinc-800">
+                  <div className="text-xs font-medium text-zinc-500 mb-2">Processing</div>
+                  <div className="space-y-1.5">
+                    {currentSteps.map((step, index) => (
+                      <div key={index} className="flex items-center gap-2 text-sm">
+                        <div className={`w-1.5 h-1.5 rounded-full ${
+                          index === currentSteps.length - 1
+                            ? 'bg-blue-400 animate-pulse'
+                            : 'bg-emerald-400'
+                        }`} />
+                        <span className="text-zinc-400">{step.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div ref={messagesEndRef} />
           </div>
         </div>
+
+        {/* Error display */}
+        {error && (
+          <div className="px-4 pb-2">
+            <div className="max-w-3xl mx-auto">
+              <div className="p-3 bg-red-900/30 border border-red-800/50 rounded-lg text-red-300 text-sm">
+                {error}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Input Area */}
+        <div className="flex-shrink-0 border-t border-zinc-800 p-4">
+          <div className="max-w-3xl mx-auto">
+            <div className="relative bg-zinc-900 rounded-xl border border-zinc-700 focus-within:border-zinc-500 transition-colors">
+              <textarea
+                ref={textareaRef}
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Message..."
+                rows={1}
+                className="w-full bg-transparent px-4 py-3 pr-12 text-zinc-100 placeholder-zinc-500 resize-none focus:outline-none max-h-[200px]"
+                disabled={sending}
+              />
+              <button
+                onClick={sendMessage}
+                disabled={!inputMessage.trim() || sending}
+                className="absolute right-2 bottom-2 p-2 rounded-lg bg-zinc-700 hover:bg-zinc-600 disabled:opacity-40 disabled:hover:bg-zinc-700 transition-colors"
+              >
+                {sending ? (
+                  <div className="w-4 h-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <svg className="w-4 h-4 text-zinc-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                  </svg>
+                )}
+              </button>
+            </div>
+            <p className="text-xs text-zinc-600 mt-2 text-center">
+              Press Enter to send, Shift+Enter for new line
+            </p>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
+
+// Conversation Item Component
+function ConversationItem({
+  conversation,
+  isActive,
+  onClick,
+  onDelete
+}: {
+  conversation: Conversation;
+  isActive: boolean;
+  onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
+  const [showDelete, setShowDelete] = useState(false);
+
+  return (
+    <div
+      className={`group mx-2 px-2 py-2 rounded-lg cursor-pointer transition-colors ${
+        isActive
+          ? 'bg-zinc-800'
+          : 'hover:bg-zinc-800/50'
+      }`}
+      onClick={onClick}
+      onMouseEnter={() => setShowDelete(true)}
+      onMouseLeave={() => setShowDelete(false)}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-zinc-200 truncate">{conversation.title || 'New conversation'}</p>
+        </div>
+        {showDelete && (
+          <button
+            onClick={onDelete}
+            className="p-1 text-zinc-500 hover:text-red-400 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          </button>
+        )}
       </div>
-    </section>
+    </div>
   );
 }
